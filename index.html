@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Dinerico</title>
+  <meta name="description" content="Dinerico: finanzas personales, presupuestos, ahorro, inversiones y patrimonio. Privado: tus datos se quedan en tu dispositivo.">
+  <meta name="theme-color" content="#0f1320">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dinerico">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app" hidden>
+    <header class="top">
+      <button id="back" class="icon-btn" aria-label="Atrás" hidden>‹</button>
+      <h1 id="title">Dinerico</h1>
+      <div class="top-actions">
+        <a href="#/avisos" class="icon-btn bell" aria-label="Avisos">🔔<span id="badge" class="badge" hidden></span></a>
+        <button id="eye" class="icon-btn" aria-label="Ocultar importes">👁️</button>
+        <button id="lockbtn" class="icon-btn" aria-label="Bloquear" hidden>🔒</button>
+      </div>
+    </header>
+    <main id="view"></main>
+    <button id="fab" class="fab" aria-label="Añadir movimiento">+</button>
+    <nav class="tabs">
+      <a href="#/inicio" data-tab="inicio"><span>🏠</span>Inicio</a>
+      <a href="#/movimientos" data-tab="movimientos"><span>📒</span>Movimientos</a>
+      <span class="tab-gap"></span>
+      <a href="#/plan" data-tab="plan"><span>🧮</span>Plan</a>
+      <a href="#/mas" data-tab="mas"><span>☰</span>Más</a>
+    </nav>
+  </div>
+  <noscript>Dinerico necesita JavaScript activado.</noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
