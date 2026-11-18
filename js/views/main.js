@@ -2,12 +2,12 @@
 import { html, raw, money, pct, fmtDate, byId, sum, esc, today, groupBy } from '../util.js';
 import {
   periodOf, shiftPeriod, periodSummary, periodProgress, budgetStatus, alerts, netWorth, base,
-  catName, rootCat, balance, activeAccounts, goalInfo, txBase, dueRecurring, recurringMonthly, upcomingRecurring, budgetTotal, savingsTarget,
+  catName, rootCat, balance, activeAccounts, goalInfo, txBase, dueRecurring, recurringMonthly, upcomingRecurring, budgetTotal, savingsTarget, portfolio, toBase,
 } from '../calc.js';
 import { donut, progress, PALETTE } from '../charts.js';
 import { txForm, recurringForm, materialize, accountForm } from '../forms.js';
 import { update } from '../store.js';
-import { ACCOUNT_TYPES } from '../defaults.js';
+import { ACCOUNT_TYPES, ASSET_KINDS } from '../defaults.js';
 import { toast, sheet, field, readForm } from '../ui.js';
 
 // ---------- piezas reutilizables ----------
@@ -71,6 +71,10 @@ function home(s) {
   const canSpend = bt > 0 ? bt - sm.expense : (sm.income || s.settings.expectedIncome) - plannedSave - sm.expense;
   const up = upcomingRecurring(s, 10).filter((r) => r.type === 'expense');
   const hello = s.settings.name ? `Hola, ${s.settings.name}` : 'Hola';
+  const fixed = s.recurring.filter((r) => r.active && r.type === 'expense').sort((a, b) => a.next.localeCompare(b.next));
+  const fixedMonthly = sum(fixed, (r) => toBase(s, recurringMonthly(r), byId(s.accounts, r.accountId)?.currency));
+  const holdings = portfolio(s).holdings.filter((h) => !h.asset.closed && h.asset.kind !== 'other' && (h.value || h.qty)).sort((a, b) => b.value - a.value);
+  const invV = sum(holdings, (h) => h.value), invC = sum(holdings, (h) => h.cost);
   return html`
   <section class="hero card">
     <small class="muted">${hello} · patrimonio neto</small>
@@ -91,6 +95,13 @@ function home(s) {
     <div class="callout mt"><span>💸</span><div><b>${money(Math.max(0, canSpend), B)}</b> <small>${bt > 0 ? 'quedan en tus presupuestos' : 'disponibles para gastar sin tocar el ahorro previsto'}</small></div></div>
     <div class="row gap mt"><a class="btn small" href="#/informe/${p.key}">Ver informe</a><a class="btn small ghost" href="#/plan">Reparto del mes</a></div>
   </section>
+  ${fixed.length ? html`<section class="card"><div class="row between"><h3>Gastos fijos</h3><a class="small" href="#/recurrentes">Gestionar</a></div>
+    ${fixed.map((r) => html`<div class="row between li-static"><span>${byId(s.categories, r.categoryId)?.icon || '🔁'} ${r.name}</span><small class="muted">${fmtDate(r.next)} · <b class="txt">${money(r.amount, byId(s.accounts, r.accountId)?.currency || B)}</b></small></div>`)}
+    <div class="row between total"><span>Total al mes</span><b>${money(fixedMonthly, B)}</b></div>
+    ${sm.income || s.settings.expectedIncome ? html`<small class="muted">${Math.round(fixedMonthly / (sm.income || s.settings.expectedIncome) * 100)} % de tu ingreso</small>` : ''}</section>` : ''}
+  ${holdings.length ? html`<section class="card"><div class="row between"><h3>Inversiones</h3><a class="small" href="#/inversiones">Ver todo</a></div>
+    ${holdings.slice(0, 5).map((h) => html`<a class="row between li-static" href="#/activo/${h.asset.id}"><span>${ASSET_KINDS[h.asset.kind]?.icon} ${h.asset.name}</span><span class="right"><b>${money(h.value, B)}</b><small class="${h.gain >= 0 ? 'pos' : 'neg'}">${money(h.gain, B, { sign: true })} (${pct(h.gainPct)})</small></span></a>`)}
+    <div class="row between total"><span>Total</span><span class="right"><b>${money(invV, B)}</b><small class="${invV - invC >= 0 ? 'pos' : 'neg'}">${money(invV - invC, B, { sign: true })} (${pct(invC ? (invV - invC) / invC : 0)})</small></span></div></section>` : ''}
   ${items.length ? html`<section class="card"><h3>Gastos por categoría</h3>
     <div class="donut-row">${raw(donut(items, { center: money(sm.expense, B, { decimals: 0 }), sub: 'este periodo' }))}
     <ul class="legend">${items.map((x) => html`<li><i style="background:${x.color}"></i>${x.label}<b>${money(x.value, B, { decimals: 0 })}</b></li>`)}</ul></div></section>` : ''}
@@ -98,7 +109,6 @@ function home(s) {
     ${bs.slice(0, 4).map((b) => html`<div class="bud"><div class="row between"><span>${b.cat.icon} ${b.cat.name}</span><small>${money(b.spent, B, { decimals: 0 })} / ${money(b.limit, B, { decimals: 0 })}</small></div>${raw(progress(b.ratio, b.level))}</div>`)}</section>` : ''}
   ${goals.length ? html`<section class="card"><div class="row between"><h3>Objetivos</h3><a class="small" href="#/objetivos">Todos</a></div>
     ${goals.map((g) => html`<div class="bud"><div class="row between"><span>${g.g.icon} ${g.g.name}</span><small>${money(g.saved, B, { decimals: 0 })} / ${money(g.target, B, { decimals: 0 })}</small></div>${raw(progress(g.progress, g.done ? 'ok' : g.behind ? 'warn' : ''))}</div>`)}</section>` : ''}
-  ${up.length ? html`<section class="card"><h3>Próximos cargos</h3>${up.map((r) => html`<div class="row between li-static"><span>📅 ${r.name}</span><small>${fmtDate(r.next)} · ${money(r.amount, B)}</small></div>`)}</section>` : ''}
   <section class="card"><div class="row between"><h3>Últimos movimientos</h3><a class="small" href="#/movimientos">Todos</a></div>
     ${recent.length ? html`<div class="list">${recent.map((t) => txRow(s, t))}</div>` : html`<p class="muted">Aún no hay movimientos. Pulsa <b>+</b> para apuntar el primero.</p>`}</section>
   <section class="card"><div class="row between"><h3>Cuentas</h3><a class="small" href="#/cuentas">Gestionar</a></div>

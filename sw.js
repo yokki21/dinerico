@@ -1,9 +1,9 @@
 // Service worker: la app funciona sin conexión. Sube VERSION al publicar cambios.
-const VERSION = 'dinerico-v3';
+const VERSION = 'dinerico-v4';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
-  './js/app.js', './js/util.js', './js/store.js', './js/defaults.js', './js/calc.js', './js/prices.js', './js/charts.js', './js/ui.js', './js/forms.js',
-  './js/views/lock.js', './js/views/main.js', './js/views/plan.js', './js/views/money.js', './js/views/invest.js', './js/views/reports.js', './js/views/settings.js', './js/views/onboarding.js',
+  './js/app.js', './js/util.js', './js/store.js', './js/defaults.js', './js/calc.js', './js/prices.js', './js/charts.js', './js/ui.js', './js/forms.js', './js/cloud.js', './js/cloud-config.js',
+  './js/views/lock.js', './js/views/main.js', './js/views/plan.js', './js/views/money.js', './js/views/invest.js', './js/views/reports.js', './js/views/settings.js', './js/views/onboarding.js', './js/views/account.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png',
 ];
 

@@ -51,12 +51,37 @@ python3 -m http.server 8000
 # abre http://localhost:8000
 ```
 
+## Cuenta en la nube (opcional, gratis)
+
+Sin configurar nada, Dinerico guarda los datos solo en el dispositivo. Para que cada usuario pueda crear una cuenta (con Google o con email) y sus datos se guarden siempre y se sincronicen entre dispositivos, conecta un proyecto de Firebase (plan gratuito Spark, sin tarjeta):
+
+1. Entra en <https://console.firebase.google.com>, pulsa **Crear un proyecto**, llámalo `dinerico` (Google Analytics no hace falta).
+2. **Compilación › Authentication › Comenzar**. En *Método de inicio de sesión* activa **Google** (elige tu email de asistencia) y **Correo electrónico/contraseña**.
+3. En **Authentication › Configuración › Dominios autorizados**, añade `yokki21.github.io` (o tu dominio).
+4. **Compilación › Firestore Database › Crear base de datos**, ubicación en Europa (por ejemplo `eur3`), en **modo producción**.
+5. En **Firestore › Reglas**, pega esto y pulsa **Publicar** (cada usuario solo puede leer y escribir sus propios datos):
+   ```
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /users/{uid}/{document=**} {
+         allow read, write: if request.auth != null && request.auth.uid == uid;
+       }
+     }
+   }
+   ```
+6. **⚙ Configuración del proyecto › Tus apps › Web (`</>`)**, regístrala como `Dinerico` (sin Hosting) y copia el objeto `firebaseConfig`.
+7. Pégalo en `js/cloud-config.js` (`export const firebaseConfig = { ... };`), sube `VERSION` en `sw.js` y haz `git push`.
+
+La `apiKey` de Firebase no es secreta: identifica el proyecto, y la seguridad la dan las reglas del paso 5. Si el usuario tiene PIN, los datos se suben cifrados con él (AES-256) y ni el administrador del proyecto puede leerlos.
+
 ## Datos y privacidad
 
-- Cada navegador guarda sus propios datos. No se sincronizan entre dispositivos: para pasar al móvil nuevo, descarga una copia en **Ajustes → Copias de seguridad** y restáurala allí.
+- Sin cuenta, cada navegador guarda sus propios datos; para pasar a otro móvil se usa una copia (**Ajustes → Copias de seguridad**). Con cuenta se sincronizan solos.
 - Borrar los datos del navegador borra los de la app. Dinerico recuerda hacer copia cada 14 días (configurable).
 - Si activas el PIN y lo olvidas, los datos cifrados no se pueden recuperar.
-- Las únicas conexiones externas son las de tipos de cambio y precios: `api.frankfurter.dev`, `api.coingecko.com` y `www.alphavantage.co` (solo si pones tu clave).
+- Lo que escribes en el asistente se guarda al momento como borrador: si sales de la app y vuelves, sigue ahí.
+- Las conexiones externas son Firebase (solo si hay cuenta) y las de tipos de cambio y precios: `api.frankfurter.dev`, `api.coingecko.com` y `www.alphavantage.co` (solo si pones tu clave).
 
 ## Estructura
 

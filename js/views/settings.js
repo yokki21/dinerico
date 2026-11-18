@@ -7,7 +7,10 @@ import { toast, field, select, checkbox, readForm, confirmDlg, sheet, segmented 
 import { categoryForm } from '../forms.js';
 import { CURRENCIES, TAX_BRACKETS_ES } from '../defaults.js';
 import { newPin } from './lock.js';
+import { accountCard, bindAccountCard } from './account.js';
 import { fetchFx } from '../prices.js';
+import { currentUser } from '../cloud.js';
+const cloudOn = () => !!currentUser();
 
 function mas(s) {
   const L = (href, icon, title, sub) => html`<a class="li" href="${href}"><span class="ic">${icon}</span><span class="tx"><b>${title}</b><small>${sub}</small></span><span class="chev">›</span></a>`;
@@ -30,7 +33,7 @@ function mas(s) {
     ${L('#/categorias', '🏷️', 'Categorías', 'Personaliza gastos e ingresos')}
     ${L('#/ajustes', '⚙️', 'Ajustes', 'Moneda, mes, PIN, copias, tema')}
   </div>
-  <p class="small muted center">Dinerico guarda todo en este dispositivo${s.settings.pinEnabled ? ', cifrado con tu PIN' : ''}. Nadie más lo ve.</p>`;
+  <p class="small muted center">Dinerico guarda tus datos en este dispositivo${s.settings.pinEnabled ? ', cifrados con tu PIN' : ''}${cloudOn() ? ' y en tu cuenta' : ''}.</p>`;
 }
 
 function ajustes(s) {
@@ -38,8 +41,9 @@ function ajustes(s) {
   const miss = missingRates(s);
   const curs = [...new Set([...s.accounts.map((a) => a.currency), ...s.assets.map((a) => a.currency)])].filter((c) => c && c !== B);
   return html`
+  ${accountCard()}
   <section class="card"><h3>💾 Copias de seguridad</h3>
-    <p class="small muted">Tus datos solo están en este navegador. Si borras los datos del navegador o cambias de móvil, los recuperas con una copia. Última: <b>${st.lastBackup ? fmtDate(st.lastBackup, true) : 'nunca'}</b>.</p>
+    <p class="small muted">Descarga un archivo con todos tus datos para guardarlo donde quieras. Si no usas cuenta, es la única forma de recuperarlos si borras el navegador o cambias de móvil. Última: <b>${st.lastBackup ? fmtDate(st.lastBackup, true) : 'nunca'}</b>.</p>
     <div class="row gap wrap"><button class="btn primary" data-export>Descargar copia</button><label class="btn">Restaurar copia<input type="file" accept=".json,application/json" hidden data-import></label>
       <button class="btn ghost" data-csv>Exportar movimientos CSV</button></div>
     ${st.pinEnabled ? html`<p class="small muted mt">La copia va cifrada con tu PIN actual: guárdalo, sin él no se puede abrir.</p>` : ''}
@@ -95,6 +99,7 @@ function csv(s) {
 }
 
 function mountAjustes(el, s) {
+  bindAccountCard(el, confirmDlg);
   const gen = el.querySelector('#gen');
   const syncPd = () => { el.querySelector('#pd').hidden = gen.querySelector('[name=periodMode]:checked').value !== 'payday'; };
   gen.addEventListener('change', syncPd); syncPd();

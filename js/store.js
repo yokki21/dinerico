@@ -104,24 +104,52 @@ export async function unlock(pin) {
 
 export function lock() { state = null; cryptoKey = null; }
 
-async function persistNow() {
+let persistHook = null;
+/** Se llama tras cada guardado local con el registro guardado (lo usa la sincronización). */
+export const onPersist = (fn) => { persistHook = fn; };
+
+let dirty = false;
+async function persistNow({ touch = true } = {}) {
   if (!state) return;
-  state.meta.savedAt = new Date().toISOString();
+  dirty = false;
+  if (touch) state.meta.savedAt = new Date().toISOString();
   const rec = cryptoKey ? await encrypt(state, cryptoKey, salt) : { app: 'dinerico', v: 1, enc: false, state };
+  rec.savedAt = state.meta.savedAt;
   await rawSet(rec);
+  if (touch) persistHook?.(rec);
 }
+/** Registro tal y como está guardado (cifrado si hay PIN). */
+export const getRecord = () => rawGet();
+/** Sustituye los datos locales por un registro (p. ej. el de la nube) y vuelve a arrancar. */
+export async function adoptRecord(rec) {
+  await rawSet(rec);
+  if (rec.enc && cryptoKey && rec.salt === salt) {
+    try { state = migrate(await decrypt(rec, cryptoKey)); listeners.forEach((l) => l(state)); return 'ready'; } catch { /* otro PIN */ }
+  }
+  state = null; cryptoKey = null; salt = null;
+  const r = await boot();
+  if (r === 'ready') listeners.forEach((l) => l(state));
+  return r;
+}
+/** Marca de qué fue lo último sincronizado, fuera del estado para no alterar savedAt. */
+export const syncMark = {
+  get() { try { return JSON.parse(localStorage.getItem('dinerico-sync') || '{}'); } catch { return {}; } },
+  set(v) { try { localStorage.setItem('dinerico-sync', JSON.stringify(v)); } catch { /* */ } },
+};
 const persistSoon = debounce(() => persistNow().catch((e) => console.error(e)), 250);
 
 /** Aplica un cambio al estado, guarda y notifica. */
 export function update(fn, { silent = false } = {}) {
   fn(state);
+  dirty = true;
   persistSoon();
   if (!silent) listeners.forEach((l) => l(state));
 }
-export const save = () => persistNow();
+/** Guarda ya si hay cambios pendientes (al salir de la app o bloquear). */
+export const save = () => (dirty ? persistNow() : Promise.resolve());
 
 export function replaceState(s) {
-  state = migrate(s);
+  state = migrate(s); dirty = true;
   persistSoon();
   listeners.forEach((l) => l(state));
 }
@@ -136,7 +164,7 @@ export async function setPin(pin) {
 
 export async function wipe() {
   try { const db = await idb(); db.transaction(STORE, 'readwrite').objectStore(STORE).delete(KEY); } catch { /* */ }
-  try { localStorage.removeItem(LS_KEY); } catch { /* */ }
+  try { localStorage.removeItem(LS_KEY); localStorage.removeItem('dinerico-sync'); localStorage.removeItem('dinerico-wizard'); } catch { /* */ }
   state = defaultState(); cryptoKey = null; salt = null;
 }
 

@@ -387,7 +387,7 @@ export function assetForm(asset = null) {
     <datalist id="brokerlist">${[...new Set([...s.accounts.filter((x) => !x.archived).map((x) => x.name), 'MyInvestor', 'Trade Republic', 'Indexa Capital', 'DEGIRO', 'Interactive Brokers', 'XTB', 'eToro', 'Revolut', 'Binance', 'Coinbase', 'Bit2Me'])].map((n) => html`<option value="${n}"></option>`)}</datalist>
     <div data-unit>${field({ name: 'washDays', label: 'Ventana anti-recompra (días)', type: 'number', value: a.washDays ?? '', hint: 'Por defecto: 61 días en acciones/ETF cotizados en la UE, 365 en fondos no cotizados. Ajústalo si tu caso es otro.' })}</div>
     ${!asset ? html`<div class="card soft"><b>Posición inicial (opcional)</b><p class="small muted">Si ya tienes este activo, indica lo que hay hoy. Para la fiscalidad exacta es mejor apuntar cada compra con su fecha.</p>
-      <div class="grid2" data-unit>${field({ name: 'iQty', label: 'Participaciones', type: 'money' })}${field({ name: 'iCost', label: 'Coste total pagado', type: 'money' })}</div>
+      <div class="grid2" data-unit>${field({ name: 'iCost', label: 'Total que metiste', type: 'money' })}${field({ name: 'iQty', label: 'Participaciones (si las sabes)', type: 'money' })}</div>
       <div data-nounit>${field({ name: 'iAmount', label: 'Importe aportado', type: 'money' })}${field({ name: 'iValue', label: 'Valor actual', type: 'money' })}</div>
       ${field({ name: 'iDate', label: 'Fecha de compra (aprox.)', type: 'date', value: today() })}</div>` : ''}
     ${asset ? checkbox({ name: 'closed', label: 'Cerrado (vendido por completo)', checked: !!a.closed }) : ''}
@@ -439,9 +439,14 @@ export function assetForm(asset = null) {
         }
         const i = st.assets.findIndex((x) => x.id === out.id); if (i >= 0) st.assets[i] = out; else st.assets.push(out);
         if (!asset) {
-          if (unit && v.iQty) st.trades.push({ id: uid(), seq: Date.now(), assetId: out.id, date: v.iDate || today(), type: 'buy', qty: v.iQty, price: v.iCost && v.iQty ? v.iCost / v.iQty : out.price || 0, fee: 0, note: 'Posición inicial' });
-          if (!unit && v.iAmount) {
-            st.trades.push({ id: uid(), seq: Date.now(), assetId: out.id, date: v.iDate || today(), type: 'buy', qty: v.iAmount, price: 1, fee: 0, note: 'Aportación inicial' });
+          if (unit && (v.iQty || v.iCost)) {
+            // Sin participaciones: se deducen del precio actual; si tampoco hay precio, 1 participación
+            const q = v.iQty || (v.iCost && out.price ? round6(v.iCost / out.price) : 1);
+            if (!out.price) { out.price = v.iCost / q; out.priceDate = today(); }
+            st.trades.push({ id: uid(), seq: Date.now(), assetId: out.id, date: v.iDate || today(), type: 'buy', qty: q, price: v.iCost ? v.iCost / q : out.price || 0, fee: 0, note: 'Posición inicial' });
+          }
+          if (!unit && (v.iAmount || v.iValue)) {
+            st.trades.push({ id: uid(), seq: Date.now(), assetId: out.id, date: v.iDate || today(), type: 'buy', qty: v.iAmount || v.iValue, price: 1, fee: 0, note: 'Aportación inicial' });
             if (v.iValue != null && v.kind !== 'deposit') st.trades.push({ id: uid(), seq: Date.now() + 1, assetId: out.id, date: today(), type: 'value', price: v.iValue });
           }
         }

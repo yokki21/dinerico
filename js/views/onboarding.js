@@ -4,6 +4,8 @@ import { update, getState, setPin, readBackup, replaceState } from '../store.js'
 import { PROFILES, CURRENCIES, ACCOUNT_TYPES, ASSET_KINDS } from '../defaults.js';
 import { toast, sheet, field } from '../ui.js';
 import { newPin } from './lock.js';
+import * as cloud from '../cloud.js';
+import { loginSheet } from './account.js';
 import { nextDate } from '../calc.js';
 
 const BANKS = ['Efectivo', 'Revolut', 'Imagin', 'Trade Republic', 'MyInvestor', 'ING', 'BBVA', 'Santander', 'CaixaBank', 'Openbank', 'N26', 'Sabadell', 'Bankinter', 'Unicaja', 'Kutxabank', 'Indexa Capital', 'Binance', 'Wise'];
@@ -14,8 +16,13 @@ const FIXED = [['Alquiler / hipoteca', 'Alquiler / hipoteca'], ['Aportación a c
 const GOALS = [['🎓', 'Máster'], ['🚗', 'Coche'], ['🏠', 'Entrada de un piso'], ['✈️', 'Viaje'], ['💻', 'Ordenador'], ['💍', 'Boda'], ['🎁', 'Regalos de Navidad']];
 
 const L = (label, inner) => html`<label class="field"><span>${label}</span>${inner}</label>`;
+const DRAFT = 'dinerico-wizard';
 let step = 0;
 let d = null;
+try { const x = JSON.parse(localStorage.getItem(DRAFT) || 'null'); if (x?.d) { d = x.d; step = x.step || 0; } } catch { /* */ }
+/** Guarda lo escrito para no perderlo si sales de la app (por ejemplo, a mirar el banco). */
+const saveDraft = () => { try { if (d && step < 8) localStorage.setItem(DRAFT, JSON.stringify({ d, step })); } catch { /* */ } };
+const clearDraft = () => { try { localStorage.removeItem(DRAFT); } catch { /* */ } };
 const fresh = () => ({
   name: '', currency: 'EUR', profile: 'primerEmpleo', theme: 'auto',
   income: '', variable: false, payday: 28, periodMode: 'payday', weekendShift: true, extraPays: 12, incomeAcc: 0,
@@ -35,6 +42,8 @@ function view() {
       <ul class="feat"><li>🔒 Todo se guarda en tu dispositivo. Sin cuentas ni servidores.</li><li>🧮 Te propone cada mes cuánto ahorrar e invertir según lo que cobras.</li><li>📊 Informe mensual con lo que ha ido bien y qué mejorar.</li><li>📈 Inversiones, deudas, objetivos, patrimonio y fiscalidad.</li></ul>
       <p class="small muted">Te haré unas preguntas (unos 3 minutos) para personalizarlo. Todo se puede cambiar después.</p>
       ${getState()?.settings.onboarded ? html`<p class="small warn-text">Ya tienes Dinerico configurado: lo que añadas ahora se sumará a tus datos actuales.</p>` : ''}
+      ${cloud.configured() && !cloud.currentUser() ? html`<button type="button" class="btn block mt" data-login>☁️ Ya tengo cuenta: recuperar mis datos</button>` : ''}
+      ${cloud.currentUser() ? html`<p class="small ok mt">Sesión iniciada como ${cloud.currentUser().email || ''}. Tus datos se guardarán en tu cuenta.</p>` : ''}
       <div class="row gap mt"><label class="btn ghost">Restaurar una copia<input type="file" accept=".json" hidden data-restore></label><span class="flex"></span><button class="btn primary" data-next>Empezar</button></div>`,
     () => html`<h2>Sobre ti</h2>
       <label class="field"><span>¿Cómo te llamas?</span><input name="name" value="${d.name}" placeholder="Opcional"></label>
@@ -115,6 +124,7 @@ function view() {
     },
     () => html`<div class="wiz-hero"><div class="logo">🎉</div><h1>¡Listo${d.name ? ', ' + esc(d.name) : ''}!</h1><p>Dinerico ya está configurado.</p></div>
       <ul class="feat"><li>Pulsa <b>+</b> para apuntar un gasto en dos toques.</li><li>En <b>Plan</b> verás el reparto del mes y los presupuestos (ya te he propuesto unos).</li><li>En <b>Más › Ajustes</b> descarga copias de seguridad de vez en cuando.</li><li>Instálala: en el navegador, «Añadir a pantalla de inicio».</li></ul>
+      ${cloud.configured() && !cloud.currentUser() ? html`<div class="card soft mt"><b>☁️ Guarda tus datos en una cuenta</b><p class="small muted">Ahora solo están en este dispositivo. Con una cuenta (Google o email) no se pierden nunca y puedes usarlos en otro móvil.</p><button type="button" class="btn block" data-login>Crear cuenta</button></div>` : ''}
       <a class="btn primary block mt" href="#/inicio">Ir al inicio</a>`,
   ];
   return html`<div class="wizard">${raw(bar)}<form id="wiz" class="form">${S[step]()}</form></div>`;
@@ -198,7 +208,7 @@ async function finish() {
     const assetIds = d.assets.map((a) => {
       const id = uid(); const unit = ASSET_KINDS[a.kind].unit;
       const acc = entityAccount(a.entity, a.kind === 'crypto' ? 'crypto' : 'broker');
-      const cost = round2(num(a.cost)), value = round2(num(a.value) || cost);
+      const cost = round2(num(a.cost) || num(a.value)), value = round2(num(a.value) || cost);
       // Con participaciones: precio = valor / participaciones. Sin ellas: 1 participación (se puede corregir luego)
       const qty = unit ? num(a.qty) || 1 : 0;
       st.assets.push({ id, kind: a.kind, name: a.name?.trim() || ASSET_KINDS[a.kind].label, currency: cur, source: 'manual', accountId: acc, price: unit ? round2(value / qty * 1e4) / 1e4 : undefined, priceDate: today(), startDate: today(), rate: 0 });
@@ -228,15 +238,19 @@ async function finish() {
     }
   });
   if (d.pin) { const pin = await newPin(); if (pin) await setPin(pin); }
-  step = 8; d = { ...d }; update(() => {});
+  step = 8; d = { ...d }; clearDraft(); update(() => {});
 }
 
 function mount(el) {
   const f = el.querySelector('#wiz');
-  const rerender = () => { el.innerHTML = String(view()); mount(el); window.scrollTo(0, 0); };
-  const addRow = (fn) => { collect(f); fn(); el.innerHTML = String(view()); mount(el); };
+  const rerender = () => { saveDraft(); el.innerHTML = String(view()); mount(el); window.scrollTo(0, 0); };
+  const addRow = (fn) => { collect(f); fn(); saveDraft(); el.innerHTML = String(view()); mount(el); };
   f.onsubmit = (e) => e.preventDefault();
-  f.querySelector('a[href="#/inicio"]')?.addEventListener('click', () => { step = 0; d = null; });
+  // Todo lo que escribes se guarda al momento en el borrador
+  f.addEventListener('input', () => { collect(f); saveDraft(); });
+  f.addEventListener('change', () => { collect(f); saveDraft(); });
+  f.querySelectorAll('[data-login]').forEach((b) => { b.onclick = () => loginSheet({ title: 'Entrar en tu cuenta' }); });
+  f.querySelector('a[href="#/inicio"]')?.addEventListener('click', () => { step = 0; d = null; clearDraft(); });
   f.querySelector('[data-next]')?.addEventListener('click', async () => {
     collect(f);
     if (step === 1) applyProfile();

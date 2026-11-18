@@ -4,7 +4,8 @@ import { setLocale, setHidden, esc, today, daysBetween } from './util.js';
 import { dueRecurring, refreshSnapshot, alerts, base, missingRates } from './calc.js';
 import { materialize, txForm } from './forms.js';
 import { fetchFx, refreshPrices } from './prices.js';
-import { toast, closeAllSheets } from './ui.js';
+import { toast, closeAllSheets, sheet } from './ui.js';
+import * as cloud from './cloud.js';
 import { lockScreen } from './views/lock.js';
 import * as main from './views/main.js';
 import * as plan from './views/plan.js';
@@ -76,13 +77,15 @@ export function render() {
 
 /** Apunta recurrentes automáticos y actualiza la foto del patrimonio. */
 function housekeeping() {
-  const s = store.getState();
+  const s = store.getState(); let changed = false;
   const due = dueRecurring(s).filter((d) => d.rec.mode === 'auto');
   if (due.length) {
     store.update((st) => { for (const d of due) materialize(st, d.rec, d.date); }, { silent: true });
     toast(`${due.length} movimiento${due.length > 1 ? 's' : ''} recurrente${due.length > 1 ? 's' : ''} apuntado${due.length > 1 ? 's' : ''}`);
+    changed = true;
   }
-  if (refreshSnapshot(s)) store.update(() => {}, { silent: true });
+  if (refreshSnapshot(s)) { store.update(() => {}, { silent: true }); changed = true; }
+  return changed;
 }
 
 async function onlineRefresh(force = false) {
@@ -104,14 +107,55 @@ async function onlineRefresh(force = false) {
 }
 export const refreshOnline = () => onlineRefresh(true);
 
+let started = false;
 function start() {
   const s = store.getState();
   applyTheme(s);
   document.getElementById('app').hidden = false;
   housekeeping();
-  if (!location.hash) location.replace(s.settings.onboarded ? '#/inicio' : '#/bienvenida');
+  if (!location.hash || (s.settings.onboarded && location.hash === '#/bienvenida')) location.replace(s.settings.onboarded ? '#/inicio' : '#/bienvenida');
   render();
   onlineRefresh();
+  if (!started) { started = true; startCloud(); } else syncNow();
+}
+
+// ---------- Nube ----------
+let lastSync = 0;
+async function afterAdopt(r) {
+  try { localStorage.removeItem('dinerico-wizard'); } catch { /* */ }
+  if (r === 'locked') { toast('Datos de la nube cargados. Introduce el PIN con el que se cifraron.'); await showLock(); return; }
+  const s = store.getState();
+  if (s?.settings.onboarded && location.hash === '#/bienvenida') location.replace('#/inicio');
+  render();
+}
+export async function syncNow({ prefer = null, quiet = true } = {}) {
+  if (!cloud.currentUser()) return;
+  lastSync = Date.now();
+  try {
+    await store.save();
+    const r = await cloud.reconcile({ prefer });
+    if (r?.conflict) return resolveConflict(r);
+    if (r === 'adopted') { toast('Datos sincronizados desde la nube', 'ok'); await afterAdopt(store.getState() ? 'ready' : 'locked'); }
+    else if (!quiet) toast(r === 'uploaded' ? 'Datos subidos a la nube' : 'Todo sincronizado', 'ok');
+    render();
+  } catch (e) { if (!quiet) toast(e.message, 'warn'); }
+}
+function resolveConflict(r) {
+  const f = (iso) => new Date(iso).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
+  sheet('¿Qué datos conservo?', `<p>Hay cambios en este dispositivo y en tu cuenta que no se han sincronizado entre sí.</p>
+    <div class="list card flush"><button class="li" data-p="local"><span class="ic">📱</span><span class="tx"><b>Los de este dispositivo</b><small>Último cambio: ${f(r.local)}</small></span></button>
+    <button class="li" data-p="remote"><span class="ic">☁️</span><span class="tx"><b>Los de la nube</b><small>Último cambio: ${f(r.remote)}</small></span></button></div>
+    <p class="small muted">Los otros se sustituyen. Si dudas, descarga antes una copia en Ajustes.</p>`, (el, close) => {
+    el.querySelectorAll('[data-p]').forEach((b) => { b.onclick = () => { close(); syncNow({ prefer: b.dataset.p, quiet: false }); }; });
+  });
+}
+function startCloud() {
+  if (!cloud.configured()) return;
+  store.onPersist((rec) => cloud.queueUpload(rec));
+  cloud.onStatus(() => { if (parseHash().name === 'ajustes') render(); });
+  let prev;
+  cloud.onUser((u) => { const was = prev; prev = u?.uid || null; if (u && was !== u.uid) syncNow(); else render(); });
+  cloud.init();
 }
 
 async function showLock() {
@@ -137,10 +181,16 @@ async function boot() {
     const s = store.getState();
     if (document.hidden) { hiddenAt = Date.now(); store.save().catch(() => {}); return; }
     if (s && s.settings.pinEnabled && hiddenAt && Date.now() - hiddenAt > (s.settings.autoLockMin || 5) * 60000) { store.lock(); showLock(); }
-    else if (s) { housekeeping(); render(); onlineRefresh(); }
+    else if (s) {
+      // Al volver no se redibuja salvo que haya cambios: así no se pierde lo que estabas escribiendo
+      if (housekeeping()) render();
+      onlineRefresh();
+      if (Date.now() - lastSync > 30000) syncNow();
+    }
     hiddenAt = null;
   });
-  window.addEventListener('online', () => onlineRefresh());
+  window.addEventListener('online', () => { onlineRefresh(); syncNow(); });
+  window.addEventListener('dinerico:sync', (e) => syncNow(e.detail || {}));
   if (status === 'locked') showLock(); else start();
   store.requestPersistence();
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});
