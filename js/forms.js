@@ -383,7 +383,8 @@ export function assetForm(asset = null) {
     <div data-kind="deposit"><div class="grid2">${field({ name: 'rate', label: 'TAE %', type: 'money', value: a.rate ? a.rate * 100 : '' })}
       ${field({ name: 'startDate', label: 'Inicio', type: 'date', value: a.startDate || today() })}</div>
       ${field({ name: 'maturity', label: 'Vencimiento', type: 'date', value: a.maturity || '' })}</div>
-    ${select({ name: 'accountId', label: 'Bróker / entidad (cuenta de efectivo asociada)', options: accountOptions(s, { includeNone: true }), value: a.accountId || '' })}
+    ${field({ name: 'entity', label: 'Bróker / entidad', value: byId(s.accounts, a.accountId)?.name || '', placeholder: 'P. ej. MyInvestor', attrs: 'list="brokerlist" autocomplete="off"', hint: 'Escríbela o elígela. Si no la tienes como cuenta, se crea sola con saldo 0.' })}
+    <datalist id="brokerlist">${[...new Set([...s.accounts.filter((x) => !x.archived).map((x) => x.name), 'MyInvestor', 'Trade Republic', 'Indexa Capital', 'DEGIRO', 'Interactive Brokers', 'XTB', 'eToro', 'Revolut', 'Binance', 'Coinbase', 'Bit2Me'])].map((n) => html`<option value="${n}"></option>`)}</datalist>
     <div data-unit>${field({ name: 'washDays', label: 'Ventana anti-recompra (días)', type: 'number', value: a.washDays ?? '', hint: 'Por defecto: 61 días en acciones/ETF cotizados en la UE, 365 en fondos no cotizados. Ajústalo si tu caso es otro.' })}</div>
     ${!asset ? html`<div class="card soft"><b>Posición inicial (opcional)</b><p class="small muted">Si ya tienes este activo, indica lo que hay hoy. Para la fiscalidad exacta es mejor apuntar cada compra con su fecha.</p>
       <div class="grid2" data-unit>${field({ name: 'iQty', label: 'Participaciones', type: 'money' })}${field({ name: 'iCost', label: 'Coste total pagado', type: 'money' })}</div>
@@ -425,11 +426,17 @@ export function assetForm(asset = null) {
     f.onsubmit = (e) => {
       e.preventDefault(); const v = readForm(f);
       const unit = ASSET_KINDS[v.kind]?.unit;
-      const out = { ...(asset || {}), id: asset?.id || uid(), kind: v.kind, name: v.name.trim(), isin: v.isin || '', currency: unit ? v.currency : base(s), source: unit ? v.source : 'manual', sourceId: v.sourceId || '', accountId: v.accountId || null, closed: !!v.closed };
+      const out = { ...(asset || {}), id: asset?.id || uid(), kind: v.kind, name: v.name.trim(), isin: v.isin || '', currency: unit ? v.currency : base(s), source: unit ? v.source : 'manual', sourceId: v.sourceId || '', accountId: null, closed: !!v.closed };
       if (unit && v.price != null) { if (v.price !== asset?.price) out.priceDate = today(); out.price = v.price; }
       out.washDays = v.washDays != null && v.washDays !== '' ? Number(v.washDays) : null;
       if (v.kind === 'deposit') { out.rate = (v.rate || 0) / 100; out.startDate = v.startDate; out.maturity = v.maturity || null; }
       update((st) => {
+        const en = (v.entity || '').trim();
+        if (en) {
+          const ex = st.accounts.find((x) => x.name.trim().toLowerCase() === en.toLowerCase());
+          if (ex) out.accountId = ex.id;
+          else { out.accountId = uid(); st.accounts.push({ id: out.accountId, name: en, type: v.kind === 'crypto' ? 'crypto' : 'broker', currency: base(st), initial: 0, interest: 0 }); }
+        }
         const i = st.assets.findIndex((x) => x.id === out.id); if (i >= 0) st.assets[i] = out; else st.assets.push(out);
         if (!asset) {
           if (unit && v.iQty) st.trades.push({ id: uid(), seq: Date.now(), assetId: out.id, date: v.iDate || today(), type: 'buy', qty: v.iQty, price: v.iCost && v.iQty ? v.iCost / v.iQty : out.price || 0, fee: 0, note: 'Posición inicial' });
@@ -453,7 +460,7 @@ export function assetForm(asset = null) {
 export function tradeForm(asset, trade = null, presetType = null) {
   const s = S();
   const unit = ASSET_KINDS[asset.kind]?.unit;
-  const tr = trade || { type: presetType || 'buy', date: today(), price: asset.price || '', fee: 0, cashAccountId: asset.accountId || '' };
+  const tr = trade || { type: presetType || 'buy', date: today(), price: asset.price || '', fee: 0, cashAccountId: asset.accountId && balance(s, asset.accountId) > 0 ? asset.accountId : '' };
   const types = unit ? [['buy', 'Compra'], ['sell', 'Venta'], ['dividend', 'Dividendo'], ['traspaso', 'Traspaso'], ['fee', 'Comisión']]
     : [['buy', 'Aportación'], ['sell', 'Retirada'], ['value', 'Valoración'], ['dividend', 'Intereses']];
   const others = s.assets.filter((x) => x.id !== asset.id && !x.closed && ASSET_KINDS[x.kind]?.unit);
@@ -470,7 +477,7 @@ export function tradeForm(asset, trade = null, presetType = null) {
       ${field({ name: 'toQty', label: 'Participaciones recibidas', type: 'money', value: tr.toQty ?? '' })}</div>
     <div data-t="buy sell fee">${field({ name: 'fee', label: tr.type === 'fee' ? 'Comisión' : 'Comisiones', type: 'money', value: tr.fee ?? 0 })}</div>
     ${field({ name: 'date', label: 'Fecha de la orden', type: 'date', value: tr.date, hint: 'Usa la fecha en que das la orden: cuenta como invertido desde ese día aunque el bróker tarde en ejecutarla.' })}
-    <div data-t="buy sell dividend fee">${select({ name: 'cashAccountId', label: 'Cuenta de cargo / abono', options: accountOptions(s, { includeNone: true }), value: tr.cashAccountId || '' })}
+    <div data-t="buy sell dividend fee">${select({ name: 'cashAccountId', label: 'Cuenta de la que sale o a la que entra el dinero', options: accountOptions(s, { includeNone: true }), value: tr.cashAccountId || '', hint: 'Déjala en «Ninguna» si solo quieres registrar la operación sin mover saldo.' })}
       ${field({ name: 'cashAmount', label: 'Importe en la cuenta', type: 'money', value: tr.cashAmount ?? '', hint: 'Se calcula solo; cámbialo si el bróker cargó otra cantidad (divisa, redondeos).' })}</div>
     ${foreign ? html`<div data-t="buy sell dividend fee">${field({ name: 'fx', label: `Tipo de cambio: ${base(s)} por 1 ${asset.currency}`, type: 'money', value: tr.fx ?? (rate(s, asset.currency) ? round6(1 / rate(s, asset.currency)) : ''), hint: 'Para calcular plusvalías en tu moneda. Pon el del día de la operación.' })}</div>` : ''}
     ${field({ name: 'note', label: 'Nota', value: tr.note || '' })}

@@ -7,6 +7,7 @@ import { newPin } from './lock.js';
 import { nextDate } from '../calc.js';
 
 const BANKS = ['Efectivo', 'Revolut', 'Imagin', 'Trade Republic', 'MyInvestor', 'ING', 'BBVA', 'Santander', 'CaixaBank', 'Openbank', 'N26', 'Sabadell', 'Bankinter', 'Unicaja', 'Kutxabank', 'Indexa Capital', 'Binance', 'Wise'];
+const BROKERS = ['MyInvestor', 'Trade Republic', 'Indexa Capital', 'Finizens', 'inbestMe', 'DEGIRO', 'Interactive Brokers', 'XTB', 'eToro', 'Revolut', 'ING', 'BBVA', 'Santander', 'CaixaBank', 'Openbank', 'Renta 4', 'Binance', 'Coinbase', 'Bit2Me', 'Kraken'];
 const BANK_TYPE = { Efectivo: 'cash', 'Trade Republic': 'broker', MyInvestor: 'broker', 'Indexa Capital': 'broker', Binance: 'crypto' };
 const FIXED = [['Alquiler / hipoteca', 'Alquiler / hipoteca'], ['Aportación a casa', 'Aportación a casa'], ['Luz', 'Luz'], ['Agua', 'Agua'], ['Internet y móvil', 'Internet y móvil'], ['Gimnasio', 'Gimnasio'],
   ['Seguro coche', 'Seguro coche'], ['Renting / cuota coche', 'Renting / cuota coche'], ['Transporte público', 'Transporte público'], ['Streaming', 'Streaming'], ['Música', 'Música'], ['Apps y software', 'Apps y software']];
@@ -89,10 +90,12 @@ function view() {
         ${L('Nombre', html`<input name="sn${i}" value="${a.name}" placeholder="P. ej. Fidelity MSCI World">`)}
         <div class="grid2">${L('Total que metiste', html`<input name="sc${i}" data-money inputmode="decimal" value="${a.cost}" placeholder="0">`)}${L('Lo que vale hoy', html`<input name="sv${i}" data-money inputmode="decimal" value="${a.value}" placeholder="0">`)}</div>
         <div class="grid2">${ASSET_KINDS[a.kind].unit ? L('Participaciones (opcional)', html`<input name="sq${i}" data-money inputmode="decimal" value="${a.qty || ''}" placeholder="Si las sabes">`) : html`<span></span>`}
-          ${L('Bróker / entidad', html`<select name="sa${i}"><option value="">—</option>${d.accounts.map((x, j) => html`<option value="${j}" ${raw(String(a.acc) === String(j) ? 'selected' : '')}>${x.name}</option>`)}</select>`)}</div>
+          ${L('Bróker / entidad', html`<input name="sa${i}" list="brokers" value="${a.entity || ''}" placeholder="P. ej. MyInvestor" autocomplete="off">`)}</div>
         <div class="row end"><button type="button" class="btn small ghost danger" data-rma="${i}">Quitar</button></div></div>`)}</div>
-      ${d.assets.length ? html`<div class="grid2 mt">${L('Aportación periódica mensual', html`<input name="monthlyInvest" data-money inputmode="decimal" value="${d.monthlyInvest}" placeholder="0">`)}
-        ${L('A qué activo', html`<select name="monthlyInvestAsset">${d.assets.map((a, i) => html`<option value="${i}" ${raw(Number(d.monthlyInvestAsset) === i ? 'selected' : '')}>${a.name || ASSET_KINDS[a.kind].label}</option>`)}</select>`)}</div>` : ''}
+      <datalist id="brokers">${[...new Set([...d.accounts.map((x) => x.name), ...BROKERS])].map((n) => html`<option value="${n}"></option>`)}</datalist>
+      ${d.assets.length ? html`<h3 class="mt">Aportación periódica (opcional)</h3><div class="grid2">${L('Cuánto al mes', html`<input name="monthlyInvest" data-money inputmode="decimal" value="${d.monthlyInvest}" placeholder="0">`)}
+        ${L('A qué activo', html`<select name="monthlyInvestAsset">${d.assets.map((a, i) => html`<option value="${i}" ${raw(Number(d.monthlyInvestAsset) === i ? 'selected' : '')}>${a.name || ASSET_KINDS[a.kind].label}</option>`)}</select>`)}</div>
+        ${d.accounts.length ? L('Se paga desde', html`<select name="investFrom">${d.accounts.map((x, j) => html`<option value="${j}" ${raw(String(d.investFrom ?? d.incomeAcc ?? 0) === String(j) ? 'selected' : '')}>${x.name}</option>`)}</select>`) : ''}` : ''}
       ${nav(d.assets.length ? 'Siguiente' : 'No invierto aún')}`,
     () => {
       const inc = num(d.income); const fixed = sum(d.fixed, (f) => num(f.amount));
@@ -121,13 +124,13 @@ function view() {
 function collect(f) {
   const g = (n) => f.elements[n];
   const val = (n) => (g(n) ? (g(n).type === 'checkbox' ? g(n).checked : g(n).value) : undefined);
-  for (const k of ['name', 'currency', 'income', 'payday', 'extraPays', 'incomeAcc', 'emergencyMonths', 'emergencyAcc', 'monthlyInvest', 'monthlyInvestAsset', 'savingsValue', 'savingsMode', 'emergencyShare', 'investShare']) if (g(k)) d[k] = val(k);
+  for (const k of ['name', 'currency', 'income', 'payday', 'extraPays', 'incomeAcc', 'emergencyMonths', 'emergencyAcc', 'monthlyInvest', 'monthlyInvestAsset', 'investFrom', 'savingsValue', 'savingsMode', 'emergencyShare', 'investShare']) if (g(k)) d[k] = val(k);
   for (const k of ['variable', 'weekendShift', 'emergency', 'pin']) if (g(k)) d[k] = val(k);
   for (const k of ['profile', 'theme', 'periodMode']) { const c = f.querySelector(`[name=${k}]:checked`); if (c) d[k] = c.value; }
   d.accounts.forEach((a, i) => { if (g('an' + i)) Object.assign(a, { name: val('an' + i), type: val('at' + i), balance: val('ab' + i), currency: val('ac' + i), interest: val('ai' + i) }); });
   d.fixed.forEach((x, i) => { if (g('fn' + i)) Object.assign(x, { name: val('fn' + i), amount: val('fa' + i), day: val('fd' + i), acc: val('fac' + i), confirm: val('fv' + i) }); });
   d.goals.forEach((x, i) => { if (g('gn' + i)) Object.assign(x, { icon: val('gi' + i), name: val('gn' + i), target: val('gt' + i), n: val('gn_' + i), u: val('gu' + i), have: val('gh' + i) }); });
-  d.assets.forEach((x, i) => { if (g('sn' + i)) Object.assign(x, { name: val('sn' + i), cost: val('sc' + i), value: val('sv' + i), acc: val('sa' + i), qty: val('sq' + i) }); });
+  d.assets.forEach((x, i) => { if (g('sn' + i)) Object.assign(x, { name: val('sn' + i), cost: val('sc' + i), value: val('sv' + i), entity: val('sa' + i), qty: val('sq' + i) }); });
 }
 
 function applyProfile() {
@@ -185,9 +188,16 @@ async function finish() {
       if (!g.name) continue;
       st.goals.push({ id: uid(), kind: 'normal', icon: g.icon || '🎯', name: g.name.trim(), target: round2(num(g.target)), targetDate: Number(g.n) > 0 ? addMonths(today(), Number(g.n) * (g.u === 'y' ? 12 : 1)) : null, priority: 3, initial: round2(num(g.have)), contributions: [], createdAt: new Date().toISOString() });
     }
+    // Busca la entidad entre las cuentas o la crea (sin saldo) para no obligar a darla de alta antes
+    const entityAccount = (name, type) => {
+      const n = (name || '').trim(); if (!n) return null;
+      const ex = st.accounts.find((x) => x.name.trim().toLowerCase() === n.toLowerCase());
+      if (ex) return ex.id;
+      const id = uid(); st.accounts.push({ id, name: n, type, currency: cur, initial: 0, interest: 0 }); return id;
+    };
     const assetIds = d.assets.map((a) => {
       const id = uid(); const unit = ASSET_KINDS[a.kind].unit;
-      const acc = a.acc === '' || a.acc == null ? null : accIds[Number(a.acc)];
+      const acc = entityAccount(a.entity, a.kind === 'crypto' ? 'crypto' : 'broker');
       const cost = round2(num(a.cost)), value = round2(num(a.value) || cost);
       // Con participaciones: precio = valor / participaciones. Sin ellas: 1 participación (se puede corregir luego)
       const qty = unit ? num(a.qty) || 1 : 0;
@@ -198,7 +208,7 @@ async function finish() {
     });
     if (num(d.monthlyInvest) > 0 && assetIds.length && accIds.length) {
       const ai = Number(d.monthlyInvestAsset) || 0; const a = d.assets[ai];
-      const acc = a.acc !== '' && a.acc != null ? accIds[Number(a.acc)] : accIds[Number(d.incomeAcc) || 0];
+      const acc = accIds[Number(d.investFrom ?? d.incomeAcc) || 0];
       st.recurring.push({ id: uid(), name: `Aportación ${a.name || ''}`.trim(), type: 'invest', amount: round2(num(d.monthlyInvest)), accountId: acc, assetId: assetIds[ai], freq: 'monthly', next: firstDate(Math.min(28, (Number(d.payday) || 1) + 1)), day: Math.min(28, (Number(d.payday) || 1) + 1), mode: 'auto', active: true });
     }
     // Presupuestos orientativos a partir del ingreso
@@ -240,7 +250,7 @@ function mount(el) {
   f.querySelectorAll('[data-rmf]').forEach((b) => { b.onclick = () => addRow(() => d.fixed.splice(Number(b.dataset.rmf), 1)); });
   f.querySelectorAll('[data-goal]').forEach((b) => { b.onclick = () => addRow(() => d.goals.push({ icon: b.dataset.ic, name: b.dataset.goal, target: '', n: '', u: 'm', have: '' })); });
   f.querySelectorAll('[data-rmg]').forEach((b) => { b.onclick = () => addRow(() => d.goals.splice(Number(b.dataset.rmg), 1)); });
-  f.querySelectorAll('[data-asset]').forEach((b) => { b.onclick = () => addRow(() => d.assets.push({ kind: b.dataset.asset, name: '', cost: '', value: '', acc: '' })); });
+  f.querySelectorAll('[data-asset]').forEach((b) => { b.onclick = () => addRow(() => d.assets.push({ kind: b.dataset.asset, name: '', cost: '', value: '', entity: '' })); });
   f.querySelectorAll('[data-rma]').forEach((b) => { b.onclick = () => addRow(() => d.assets.splice(Number(b.dataset.rma), 1)); });
   const sre = el.querySelector('#sre');
   if (sre) {

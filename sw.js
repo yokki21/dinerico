@@ -1,5 +1,5 @@
 // Service worker: la app funciona sin conexión. Sube VERSION al publicar cambios.
-const VERSION = 'dinerico-v2';
+const VERSION = 'dinerico-v3';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/util.js', './js/store.js', './js/defaults.js', './js/calc.js', './js/prices.js', './js/charts.js', './js/ui.js', './js/forms.js',
