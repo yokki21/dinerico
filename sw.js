@@ -1,5 +1,5 @@
 // Service worker: la app funciona sin conexión. Sube VERSION al publicar cambios.
-const VERSION = 'dinerico-v5';
+const VERSION = 'dinerico-v6';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/util.js', './js/store.js', './js/defaults.js', './js/calc.js', './js/prices.js', './js/charts.js', './js/ui.js', './js/forms.js', './js/cloud.js', './js/cloud-config.js',
@@ -18,7 +18,8 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // APIs externas: siempre red
   // Red primero (para recibir actualizaciones) con caché como respaldo sin conexión
   e.respondWith(
-    fetch(e.request).then((r) => {
+    // no-cache: comprueba siempre con el servidor si hay versión nueva (si no, usa la caché del navegador)
+    fetch(e.request.mode === 'navigate' ? e.request : new Request(e.request, { cache: 'no-cache' })).then((r) => {
       if (r.ok) { const copy = r.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
       return r;
     }).catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('./index.html'))),

@@ -39,7 +39,7 @@ function view() {
   const nav = (next = 'Siguiente', back = true) => html`<div class="row gap mt wiz-nav">${back ? html`<button class="btn ghost" data-back>Atrás</button>` : ''}<span class="flex"></span><button class="btn primary" data-next>${next}</button></div>`;
   const S = [
     () => html`<div class="wiz-hero"><div class="logo">🪙</div><h1>Dinerico</h1><p>Tus finanzas, ahorro e inversiones en un solo sitio.</p></div>
-      <ul class="feat"><li>🔒 Todo se guarda en tu dispositivo. Sin cuentas ni servidores.</li><li>🧮 Te propone cada mes cuánto ahorrar e invertir según lo que cobras.</li><li>📊 Informe mensual con lo que ha ido bien y qué mejorar.</li><li>📈 Inversiones, deudas, objetivos, patrimonio y fiscalidad.</li></ul>
+      <ul class="feat"><li>🔒 ${cloud.configured() ? 'Tus datos se guardan en tu dispositivo y, si quieres, en tu cuenta de Google o email, cifrados con tu PIN.' : 'Todo se guarda en tu dispositivo. Sin cuentas ni servidores.'}</li><li>🧮 Te propone cada mes cuánto ahorrar e invertir según lo que cobras.</li><li>📊 Informe mensual con lo que ha ido bien y qué mejorar.</li><li>📈 Inversiones, deudas, objetivos, patrimonio y fiscalidad.</li></ul>
       <p class="small muted">Te haré unas preguntas (unos 3 minutos) para personalizarlo. Todo se puede cambiar después.</p>
       ${getState()?.settings.onboarded ? html`<p class="small warn-text">Ya tienes Dinerico configurado: lo que añadas ahora se sumará a tus datos actuales.</p>` : ''}
       ${cloud.configured() && !cloud.currentUser() ? html`<button type="button" class="btn block mt" data-login>☁️ Ya tengo cuenta: recuperar mis datos</button>` : ''}
