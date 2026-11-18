@@ -59,9 +59,13 @@ export function render() {
   const n = alerts(s).filter((a) => a.level === 'bad' || a.level === 'warn').length;
   badge.textContent = n; badge.hidden = !n;
   const el = viewEl();
+  // Conserva el campo con el foco al redibujar (p. ej. al guardar un valor y tocar el siguiente)
+  const act = document.activeElement;
+  const focusSel = act && el.contains(act) && act.name ? `[name="${CSS.escape(act.name)}"]` : null;
   try {
     el.innerHTML = String(r.render(s, params));
     r.mount?.(el, s, params);
+    if (focusSel && sameView) el.querySelector(focusSel)?.focus({ preventScroll: true });
   } catch (e) {
     console.error(e);
     el.innerHTML = `<div class="card"><h3>Algo ha fallado</h3><p class="small">${esc(e.message)}</p><a class="btn" href="#/inicio">Volver al inicio</a></div>`;
@@ -123,7 +127,8 @@ async function showLock() {
 async function boot() {
   const status = await store.boot();
   applyTheme(store.getState());
-  store.onChange(() => { applyTheme(store.getState()); render(); });
+  let pending = null; // agrupa redibujados y deja que el foco llegue al campo tocado antes de redibujar
+  store.onChange(() => { applyTheme(store.getState()); clearTimeout(pending); pending = setTimeout(render, 30); });
   window.addEventListener('hashchange', () => { closeAllSheets(); render(); });
   document.getElementById('fab').onclick = () => txForm();
   document.getElementById('eye').onclick = () => store.update((st) => { st.settings.hideAmounts = !st.settings.hideAmounts; });

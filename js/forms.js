@@ -1,10 +1,10 @@
 // Formularios compartidos (en hojas inferiores): movimientos, cuentas, recurrentes,
 // objetivos, deudas, activos, operaciones y categorías.
-import { html, raw, esc, uid, today, num, round2, byId, money, sum } from './util.js';
+import { html, raw, esc, uid, today, num, round2, byId, money, sum, daysBetween, addMonths } from './util.js';
 import { sheet, field, select, checkbox, segmented, readForm, toast, confirmDlg } from './ui.js';
 import { getState, update } from './store.js';
 import { ACCOUNT_TYPES, ASSET_KINDS, DEBT_TYPES, CURRENCIES } from './defaults.js';
-import { catName, rate, base, toBase, fromBase, balance, nextDate } from './calc.js';
+import { catName, rate, base, toBase, fromBase, balance, balanceBase, nextDate } from './calc.js';
 import { searchCrypto, searchSymbol, fetchQuote, fetchCrypto } from './prices.js';
 
 const S = () => getState();
@@ -231,8 +231,13 @@ export function goalForm(goal = null) {
     <div class="grid-icon">${field({ name: 'icon', label: 'Icono', value: g.icon, attrs: 'maxlength="4"' })}
       ${field({ name: 'name', label: 'Nombre', value: g.name || '', placeholder: 'Ej.: Máster, coche, viaje…', required: true })}</div>
     ${g.kind === 'emergency' ? checkbox({ name: 'autoTarget', label: 'Calcular la meta automáticamente (meses de gastos esenciales)', checked: g.autoTarget !== false }) : ''}
-    <div class="grid2">${field({ name: 'target', label: 'Meta', type: 'money', value: g.target ?? '' })}
-      ${field({ name: 'targetDate', label: 'Fecha objetivo', type: 'date', value: g.targetDate || '' })}</div>
+    <div data-manual>${field({ name: 'target', label: 'Cuánto necesitas', type: 'money', value: g.target ?? '' })}</div>
+    <span class="lbl">¿Para cuándo?</span>
+    <div class="unit"><input name="plazo" type="number" min="1" inputmode="numeric" placeholder="Sin fecha" value="${g.targetDate ? Math.max(1, Math.round(daysBetween(today(), g.targetDate) / 30.44)) : ''}">
+      <select name="plazoU"><option value="m">meses</option><option value="y">años</option></select></div>
+    ${field({ name: 'targetDate', label: 'o elige la fecha exacta', type: 'date', value: g.targetDate || '' })}
+    <p class="small muted" id="gneed"></p>
+    ${field({ name: 'monthly', label: 'Aportación mensual fija (opcional)', type: 'money', value: g.monthly || '', hint: 'Si la pones, el reparto usará esta cantidad en lugar de calcularla con la fecha.' })}
     ${select({ name: 'priority', label: 'Prioridad', options: [[1, '1 · Máxima'], [2, '2 · Alta'], [3, '3 · Media'], [4, '4 · Baja'], [5, '5 · Cuando se pueda']], value: g.priority })}
     ${select({ name: 'accountId', label: 'Dinero guardado en', options: accountOptions(s, { includeNone: true }), value: g.accountId || '', hint: 'Si eliges una cuenta, lo ahorrado es su saldo. Si no, apuntas aportaciones a mano.' })}
     <div id="initwrap">${field({ name: 'initial', label: 'Ya ahorrado', type: 'money', value: g.initial ?? 0 })}</div>
@@ -240,11 +245,24 @@ export function goalForm(goal = null) {
   </form>`;
   sheet(goal ? 'Editar objetivo' : 'Nuevo objetivo', body, (el, close) => {
     const f = el.querySelector('form');
-    const sync = () => { el.querySelector('#initwrap').hidden = !!f.accountId.value; };
+    const need = () => {
+      const t = num(f.target?.value); const saved = f.accountId.value ? balanceBase(s, f.accountId.value) : num(f.initial.value);
+      const m = f.targetDate.value ? Math.max(1, Math.round(daysBetween(today(), f.targetDate.value) / 30.44)) : 0;
+      el.querySelector('#gneed').textContent = t && m ? `Necesitas apartar ${money(Math.max(0, t - saved) / m, base(s))} al mes durante ${m} meses.` : '';
+    };
+    const sync = () => { el.querySelector('#initwrap').hidden = !!f.accountId.value; need(); };
+    const fromPlazo = () => {
+      const n = Number(f.plazo.value); if (!n) { f.targetDate.value = ''; need(); return; }
+      f.targetDate.value = addMonths(today(), f.plazoU.value === 'y' ? n * 12 : n); need();
+    };
+    f.plazo.addEventListener('input', fromPlazo); f.plazoU.addEventListener('change', fromPlazo);
+    f.targetDate.addEventListener('change', () => { f.plazoU.value = 'm'; f.plazo.value = f.targetDate.value ? Math.max(1, Math.round(daysBetween(today(), f.targetDate.value) / 30.44)) : ''; need(); });
+    f.addEventListener('input', need);
+    if (g.kind === 'emergency') { const tw = el.querySelector('[data-manual]'); const auto = f.autoTarget; const st2 = () => { tw.hidden = auto.checked; }; auto.addEventListener('change', st2); st2(); }
     f.addEventListener('change', sync); sync();
     f.onsubmit = (e) => {
       e.preventDefault(); const v = readForm(f);
-      const out = { contributions: [], createdAt: new Date().toISOString(), ...(goal || {}), id: goal?.id || uid(), icon: v.icon || '🎯', name: v.name.trim(), target: round2(v.target || 0), targetDate: v.targetDate || null, priority: Number(v.priority), accountId: v.accountId || null, initial: round2(v.initial || 0), kind: g.kind };
+      const out = { contributions: [], createdAt: new Date().toISOString(), ...(goal || {}), id: goal?.id || uid(), icon: v.icon || '🎯', name: v.name.trim(), target: round2(v.target || 0), targetDate: v.targetDate || null, monthly: round2(v.monthly || 0) || null, priority: Number(v.priority), accountId: v.accountId || null, initial: round2(v.initial || 0), kind: g.kind };
       if (g.kind === 'emergency') out.autoTarget = !!v.autoTarget;
       update((st) => { const i = st.goals.findIndex((x) => x.id === out.id); if (i >= 0) st.goals[i] = out; else st.goals.push(out); });
       close(); toast('Objetivo guardado', 'ok');

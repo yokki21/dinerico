@@ -418,7 +418,7 @@ export function goalInfo(s, g) {
   const saved = goalSaved(s, g);
   const target = g.kind === 'emergency' && g.autoTarget ? emergencyTarget(s) : Number(g.target) || 0;
   const left = Math.max(0, target - saved);
-  const months = g.targetDate ? Math.max(1, monthsBetween(today(), g.targetDate) + 1) : null;
+  const months = g.targetDate ? Math.max(1, Math.round(daysBetween(today(), g.targetDate) / 30.44)) : null;
   const monthlyNeed = months ? left / months : null;
   let expected = null; // progreso esperado lineal desde la creación
   if (g.targetDate && g.createdAt) {
@@ -430,39 +430,52 @@ export function goalInfo(s, g) {
 }
 
 // ======================= Reparto sugerido =======================
+/** Cuánto quiere ahorrar la persona este periodo: % del ingreso o cantidad fija. */
+export function savingsTarget(s, income) {
+  const plan = s.settings.plan;
+  if (plan.savingsMode === 'amount') return Math.max(0, Number(plan.savingsAmount) || 0);
+  return Math.max(0, income * (plan.savingsRate || 0));
+}
 export function suggestAllocation(s, p = periodOf(s)) {
-  const st = s.settings; const plan = st.plan;
+  const st = s.settings; const plan = st.plan; const B = base(s);
   const summ = periodSummary(s, p); const av = averages(s, 3, p);
   const income = summ.income > 0 ? summ.income : (st.expectedIncome || av.income || 0);
   const incomeSource = summ.income > 0 ? 'real' : 'previsto';
+  const target = round2(savingsTarget(s, income));
+  const spendable = income - target; // lo que queda para gastar
   const bt = budgetTotal(s);
-  const fixedRec = sum(s.recurring.filter((r) => r.active && r.type === 'expense'), recurringMonthly) * (base(s) ? 1 : 1);
-  const spend = bt > 0 ? Math.max(bt, fixedRec) : (av.expense || fixedRec || income * (1 - plan.savingsRate));
-  const available = Math.max(0, income - spend);
-  const targetSavings = income * plan.savingsRate;
-  const items = [];
-  let rem = available;
+  const items = []; const missing = [];
+  let rem = target;
   const goals = s.goals.filter((g) => !g.closed).map((g) => goalInfo(s, g));
-  const emer = goals.find((x) => x.g.kind === 'emergency');
-  if (emer && emer.left > 0 && rem > 0) {
-    const amt = Math.min(emer.left, rem * plan.emergencyShare);
-    if (amt > 0.5) { items.push({ key: 'goal:' + emer.g.id, label: `${emer.g.icon || '🛟'} ${emer.g.name}`, amount: round2(amt), why: `Te faltan ${moneyTxt(emer.left, base(s))} para cubrir ${plan.emergencyMonths} meses de gastos esenciales.` }); rem -= amt; }
+  const emer = goals.find((x) => x.g.kind === 'emergency' && !x.done);
+  if (emer && rem > 0) {
+    const want = Number(emer.g.monthly) > 0 ? Number(emer.g.monthly) : rem * plan.emergencyShare;
+    const amt = Math.min(emer.left, want, rem);
+    if (amt > 0.5) { items.push({ key: 'goal:' + emer.g.id, label: `${emer.g.icon || '🛟'} ${emer.g.name}`, amount: round2(amt), why: `Te faltan ${moneyTxt(emer.left, B)} para cubrir ${plan.emergencyMonths} meses de gastos esenciales.` }); rem -= amt; }
   }
   const others = goals.filter((x) => x.g.kind !== 'emergency' && x.left > 0)
     .sort((a, b) => (a.g.priority || 3) - (b.g.priority || 3) || (a.g.targetDate || '9').localeCompare(b.g.targetDate || '9'));
   for (const x of others) {
-    if (rem <= 0.5) break;
-    const need = x.monthlyNeed ?? x.left * 0.1;
-    const amt = Math.min(need, rem, x.left);
-    if (amt > 0.5) { items.push({ key: 'goal:' + x.g.id, label: `${x.g.icon || '🎯'} ${x.g.name}`, amount: round2(amt), why: x.months ? `Para llegar en ${x.months} meses necesitas ${moneyTxt(x.monthlyNeed, base(s))} al mes.` : 'Sin fecha límite: aportación orientativa.' }); rem -= amt; }
+    const fixed = Number(x.g.monthly) > 0;
+    const need = fixed ? Number(x.g.monthly) : (x.monthlyNeed ?? x.left * 0.1);
+    const amt = Math.max(0, Math.min(need, rem, x.left));
+    if (amt > 0.5) {
+      items.push({ key: 'goal:' + x.g.id, label: `${x.g.icon || '🎯'} ${x.g.name}`, amount: round2(amt),
+        why: fixed ? `Aportación fija que elegiste: ${moneyTxt(need, B)}/mes.` : x.months ? `Para llegar en ${x.months} meses necesitas ${moneyTxt(x.monthlyNeed, B)} al mes.` : 'Sin fecha límite: aportación orientativa.' });
+      rem -= amt;
+    }
+    if (need - amt > 1) missing.push({ name: x.g.name, short: need - amt });
   }
   if (rem > 0.5) {
     const inv = rem * plan.investShare;
     if (inv > 0.5) items.push({ key: 'invest', label: '📈 Inversión', amount: round2(inv), why: 'Lo que sobra tras colchón y objetivos, según tu porcentaje de inversión.' });
     const free = rem - inv;
-    if (free > 0.5) items.push({ key: 'free', label: '🧘 Margen libre / colchón extra', amount: round2(free), why: 'Sin asignar: para imprevistos o caprichos sin culpa.' });
+    if (free > 0.5) items.push({ key: 'free', label: '💰 Ahorro sin asignar', amount: round2(free), why: 'Ahorro que queda libre: déjalo en la cuenta remunerada o súmalo a un objetivo.' });
   }
-  return { income, incomeSource, spend, available, targetSavings, items, shortfall: targetSavings - available > Math.max(10, income * 0.02) ? targetSavings - available : 0 };
+  return {
+    income, incomeSource, target, spendable, budgets: bt, items, missing,
+    budgetsOver: bt > 0 && bt - spendable > Math.max(10, income * 0.02) ? bt - spendable : 0,
+  };
 }
 
 // ======================= Fiscalidad (España, orientativa) =======================
@@ -505,17 +518,15 @@ export function monthlyReport(s, p) {
   const prev = shiftPeriod(s, p, -1);
   const pv = periodSummary(s, prev);
   const av = averages(s, 3, p);
-  const target = s.settings.plan.savingsRate;
+  const targetAmt = savingsTarget(s, sm.income);
+  const target = sm.income > 0 ? targetAmt / sm.income : 0;
   const budgets = budgetStatus(s, p);
   const findings = []; const tips = [];
   const B = base(s);
 
   if (sm.income === 0 && sm.expense === 0) return { sm, empty: true, findings, tips, budgets };
-  if (sm.rate >= target) findings.push({ good: true, text: `Has ahorrado el ${(sm.rate * 100).toFixed(0)} % de tus ingresos (objetivo ${(target * 100).toFixed(0)} %).` });
-  else if (sm.income > 0) {
-    const miss = sm.income * target - sm.savings;
-    findings.push({ good: false, text: `Has ahorrado el ${(Math.max(0, sm.rate) * 100).toFixed(0)} % de tus ingresos; para tu objetivo del ${(target * 100).toFixed(0)} % faltaron ${moneyTxt(miss, B)}.` });
-  }
+  if (sm.income > 0 && sm.savings >= targetAmt - 0.5) findings.push({ good: true, text: `Has ahorrado ${moneyTxt(sm.savings, B)} (${(sm.rate * 100).toFixed(0)} % de tus ingresos); tu objetivo era ${moneyTxt(targetAmt, B)}.` });
+  else if (sm.income > 0) findings.push({ good: false, text: `Has ahorrado ${moneyTxt(Math.max(0, sm.savings), B)} (${(Math.max(0, sm.rate) * 100).toFixed(0)} %); para tu objetivo de ${moneyTxt(targetAmt, B)} faltaron ${moneyTxt(targetAmt - sm.savings, B)}.` });
   if (pv.expense > 0) {
     const d = sm.expense - pv.expense;
     findings.push({ good: d <= 0, text: `Gastaste ${moneyTxt(Math.abs(d), B)} ${d <= 0 ? 'menos' : 'más'} que en ${prev.label.toLowerCase()}.` });
@@ -593,6 +604,13 @@ export function alerts(s) {
   for (const a of activeAccounts(s)) if (a.type !== 'card' && balance(s, a.id) < 0) out.push({ id: `neg-${a.id}-${today()}`, level: 'bad', icon: '⚠️', text: `${a.name} está en negativo.`, go: '#/cuentas' });
   const plan = s.plans[p.key];
   if (!plan?.accepted && periodSummary(s, p).income > 0) out.push({ id: `plan-${p.key}`, level: 'info', icon: '🧮', text: 'Ya has cobrado: revisa el reparto sugerido de este mes.', go: '#/plan' });
+  // Posible doble conteo: saldo del bróker ≈ valor de lo invertido en él
+  const pfA = portfolio(s);
+  for (const a of activeAccounts(s).filter((x) => x.type === 'broker' || x.type === 'crypto')) {
+    const inv = sum(pfA.holdings.filter((h) => h.asset.accountId === a.id && !h.asset.closed), (h) => h.value);
+    const bal = balanceBase(s, a.id);
+    if (inv > 50 && bal > 50 && Math.abs(bal - inv) / inv < 0.15) out.push({ id: `dup-${a.id}`, level: 'warn', icon: '🔁', text: `${a.name} tiene ${moneyTxt(bal, base(s))} de saldo y ${moneyTxt(inv, base(s))} invertidos. Si el saldo es lo mismo que lo invertido, se cuenta dos veces: cuadra el saldo de la cuenta al efectivo real.`, go: `#/cuenta/${a.id}` });
+  }
   const miss = missingRates(s);
   if (miss.length) out.push({ id: null, level: 'warn', icon: '💱', text: `Falta el tipo de cambio de ${miss.join(', ')}.`, go: '#/ajustes' });
   return out.filter((a) => !a.id || !s.dismissed[a.id]);

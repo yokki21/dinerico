@@ -2,7 +2,7 @@
 import { html, raw, money, byId, sum, pct, num, fmtDate, monthShort, parseISO, round2 } from '../util.js';
 import {
   base, periodOf, shiftPeriod, monthlyReport, lastPeriods, periodSummary, budgetStatus, emergencyTarget, averages,
-  goalInfo, amortization, netWorth, txBase, catName,
+  goalInfo, amortization, netWorth, txBase, catName, savingsTarget,
 } from '../calc.js';
 import { bars, line, donut, progress, PALETTE } from '../charts.js';
 import { update } from '../store.js';
@@ -23,7 +23,7 @@ function informe(s, [key]) {
   const cats = Object.entries(sm.byCat).sort((a, b) => b[1] - a[1]);
   const items = cats.map(([id, v], i) => ({ label: byId(s.categories, id)?.name || 'Sin categoría', value: v, color: PALETTE[i % PALETTE.length], id }));
   const score = Math.round(Math.max(0, Math.min(100,
-    50 * Math.min(1, Math.max(0, sm.rate) / (s.settings.plan.savingsRate || 0.2)) +
+    50 * Math.min(1, Math.max(0, sm.savings) / (savingsTarget(s, sm.income) || sm.income * 0.2 || 1)) +
     30 * (r.budgets.length ? r.budgets.filter((b) => b.level !== 'over').length / r.budgets.length : 1) +
     20 * (sm.expense <= (r.av.expense || sm.expense) ? 1 : Math.max(0, 1 - (sm.expense / r.av.expense - 1) * 2)))));
   return html`${nav}

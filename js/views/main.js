@@ -2,7 +2,7 @@
 import { html, raw, money, pct, fmtDate, byId, sum, esc, today, groupBy } from '../util.js';
 import {
   periodOf, shiftPeriod, periodSummary, periodProgress, budgetStatus, alerts, netWorth, base,
-  catName, rootCat, balance, activeAccounts, goalInfo, txBase, dueRecurring, recurringMonthly, upcomingRecurring, budgetTotal,
+  catName, rootCat, balance, activeAccounts, goalInfo, txBase, dueRecurring, recurringMonthly, upcomingRecurring, budgetTotal, savingsTarget,
 } from '../calc.js';
 import { donut, progress, PALETTE } from '../charts.js';
 import { txForm, recurringForm, materialize, accountForm } from '../forms.js';
@@ -67,7 +67,7 @@ function home(s) {
   if (cats.length > 6) items.push({ label: 'Otras', value: sum(cats.slice(6), (x) => x[1]), color: '#8a93a6' });
   const recent = [...s.transactions].sort((a, b) => b.date.localeCompare(a.date) || 0).slice(0, 6);
   const plan = s.plans[p.key];
-  const plannedSave = plan?.accepted ? sum(plan.items, (i) => i.amount) : sm.income * s.settings.plan.savingsRate;
+  const plannedSave = plan?.accepted ? sum(plan.items, (i) => i.amount) : savingsTarget(s, sm.income || s.settings.expectedIncome);
   const canSpend = bt > 0 ? bt - sm.expense : (sm.income || s.settings.expectedIncome) - plannedSave - sm.expense;
   const up = upcomingRecurring(s, 10).filter((r) => r.type === 'expense');
   const hello = s.settings.name ? `Hola, ${s.settings.name}` : 'Hola';

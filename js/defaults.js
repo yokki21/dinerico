@@ -68,7 +68,7 @@ export function defaultState() {
       expectedIncome: 0,
       incomeVariable: false,
       profile: 'primerEmpleo',
-      plan: { savingsRate: 0.25, emergencyMonths: 6, emergencyShare: 0.5, investShare: 0.5, investAccountId: null, emergencyGoalId: null },
+      plan: { savingsMode: 'percent', savingsRate: 0.25, savingsAmount: 0, emergencyMonths: 6, emergencyShare: 0.5, investShare: 0.5, investAccountId: null, emergencyGoalId: null },
       tax: { brackets: TAX_BRACKETS_ES, country: 'ES' },
       priceStaleDays: 7,
     },
